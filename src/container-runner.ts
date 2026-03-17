@@ -157,6 +157,48 @@ function buildVolumeMounts(
       fs.cpSync(srcDir, dstDir, { recursive: true });
     }
   }
+
+  // Read per-group skills and plugins from groups/global/ and groups/<folder>/
+  // Format: one entry per line in 'skills' or 'plugins' files
+  const readLines = (filePath: string): string[] => {
+    try {
+      return fs
+        .readFileSync(filePath, 'utf-8')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith('#'));
+    } catch {
+      return [];
+    }
+  };
+
+  const globalGroupDir = path.resolve(GROUPS_DIR, 'global');
+  const thisGroupDir = path.resolve(GROUPS_DIR, group.folder);
+
+  // Collect skills from global + group-specific files
+  const extraSkills = [
+    ...readLines(path.join(globalGroupDir, 'skills')),
+    ...readLines(path.join(thisGroupDir, 'skills')),
+  ];
+  // Copy extra skill directories (if they exist in container/skills/)
+  for (const skill of extraSkills) {
+    const srcDir = path.join(skillsSrc, skill);
+    if (fs.existsSync(srcDir) && fs.statSync(srcDir).isDirectory()) {
+      const dstDir = path.join(skillsDst, skill);
+      fs.cpSync(srcDir, dstDir, { recursive: true });
+    }
+  }
+
+  // Collect plugins from global + group-specific files
+  const plugins = [
+    ...readLines(path.join(globalGroupDir, 'plugins')),
+    ...readLines(path.join(thisGroupDir, 'plugins')),
+  ];
+  // Write plugins list for the container entrypoint to install
+  if (plugins.length > 0) {
+    const pluginsFile = path.join(groupSessionsDir, 'plugins.txt');
+    fs.writeFileSync(pluginsFile, plugins.join('\n') + '\n');
+  }
   mounts.push({
     hostPath: groupSessionsDir,
     containerPath: '/home/node/.claude',

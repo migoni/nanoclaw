@@ -38,6 +38,16 @@ Text inside `<internal>` tags is logged but not sent to the user. If you've alre
 
 When working as a sub-agent or teammate, only use `send_message` if instructed to by the main agent.
 
+## Checking Your Capabilities
+
+IMPORTANT: When the user asks what skills, plugins, tools, or capabilities you have, you MUST run these bash commands and report the ACTUAL output. Do NOT answer from memory or guess.
+
+```bash
+echo "=== SKILLS ===" && ls /home/node/.claude/skills/ 2>/dev/null && echo "=== PLUGINS ===" && claude plugin list 2>/dev/null
+```
+
+Report both sections (skills AND plugins) to the user. If a section is empty, say so explicitly.
+
 ## Your Workspace
 
 Files you create are saved in `/workspace/group/`. Use this for notes, research, or anything that should persist.
