@@ -29,11 +29,12 @@ const MAIN_TOPIC_THREAD_ID: number | undefined = (() => {
 
 /**
  * Case-insensitive regex that matches the assistant's name in Latin and Cyrillic.
- * Used to detect "Hi Tomas" / "Томас помоги" style mentions in non-main topics.
+ * Uses (?<!\w) and (?!\w) with the Unicode flag for proper word boundaries
+ * with Cyrillic characters (JS \b only works with ASCII).
  */
 const NAME_MENTION_PATTERN = new RegExp(
-  `\\b(${ASSISTANT_NAME}|Томас|томас)\\b`,
-  'i',
+  `(?<=^|[^\\p{L}\\p{N}])(?:${ASSISTANT_NAME}|Томас)(?=[^\\p{L}\\p{N}]|$)`,
+  'iu',
 );
 
 // ---------------------------------------------------------------------------
