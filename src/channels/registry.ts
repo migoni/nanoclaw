@@ -5,10 +5,7 @@ import {
   RegisteredGroup,
 } from '../types.js';
 
-export type OnAutoRegister = (
-  jid: string,
-  group: RegisteredGroup,
-) => void;
+export type OnAutoRegister = (jid: string, group: RegisteredGroup) => void;
 
 export interface ChannelOpts {
   onMessage: OnInboundMessage;

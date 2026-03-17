@@ -29,13 +29,20 @@ export async function transcribeAudio(
     );
 
     try {
-      await execFileAsync('ffmpeg', [
-        '-i', audioPath,
-        '-ar', '16000',    // 16kHz sample rate (Whisper expects this)
-        '-ac', '1',         // mono
-        '-y',               // overwrite
-        tmpWav,
-      ], { timeout: 30000 });
+      await execFileAsync(
+        'ffmpeg',
+        [
+          '-i',
+          audioPath,
+          '-ar',
+          '16000', // 16kHz sample rate (Whisper expects this)
+          '-ac',
+          '1', // mono
+          '-y', // overwrite
+          tmpWav,
+        ],
+        { timeout: 30000 },
+      );
     } catch (err) {
       logger.error({ err, audioPath }, 'ffmpeg conversion failed');
       return null;
@@ -44,10 +51,14 @@ export async function transcribeAudio(
     // Run whisper transcription.
     // Two-pass: first detect language, then transcribe with the detected language
     // constrained to supported languages only (prevents misdetection on short clips).
-    const supportedLangs = (WHISPER_LANGUAGE || 'en,ru').split(',').map(l => l.trim());
-    const { stdout } = await execFileAsync('python3', [
-      '-c',
-      `import whisper, json
+    const supportedLangs = (WHISPER_LANGUAGE || 'en,ru')
+      .split(',')
+      .map((l) => l.trim());
+    const { stdout } = await execFileAsync(
+      'python3',
+      [
+        '-c',
+        `import whisper, json
 model = whisper.load_model("${WHISPER_MODEL}")
 audio = whisper.load_audio("${tmpWav.replace(/"/g, '\\"')}")
 audio_trimmed = whisper.pad_or_trim(audio)
@@ -57,10 +68,16 @@ supported = ${JSON.stringify(supportedLangs)}
 best = max(supported, key=lambda l: probs.get(l, 0))
 result = model.transcribe("${tmpWav.replace(/"/g, '\\"')}", language=best)
 print(json.dumps({"text": result["text"].strip(), "language": best}))`,
-    ], { timeout: 120000 }); // 2 min timeout for transcription
+      ],
+      { timeout: 120000 },
+    ); // 2 min timeout for transcription
 
     // Clean up temp file
-    try { fs.unlinkSync(tmpWav); } catch { /* ignore */ }
+    try {
+      fs.unlinkSync(tmpWav);
+    } catch {
+      /* ignore */
+    }
 
     const result = JSON.parse(stdout.trim());
     logger.info(

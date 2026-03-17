@@ -82,12 +82,14 @@ export function buildTelegramJid(
  * Lowercase, replace non-alphanumeric with dashes, collapse runs, trim dashes.
  */
 export function sanitizeFolderName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9а-яё]+/gi, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 60) || 'topic';
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9а-яё]+/gi, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 60) || 'topic'
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -272,8 +274,7 @@ export class TelegramChannel implements Channel {
 
       // For non-main topics/groups: detect name mentions and translate to trigger format
       const isMainTopic =
-        MAIN_TOPIC_THREAD_ID !== undefined &&
-        threadId === MAIN_TOPIC_THREAD_ID;
+        MAIN_TOPIC_THREAD_ID !== undefined && threadId === MAIN_TOPIC_THREAD_ID;
       if (
         !isMainTopic &&
         !TRIGGER_PATTERN.test(content) &&
@@ -413,32 +414,41 @@ export class TelegramChannel implements Channel {
         // Download the voice file from Telegram
         const file = await ctx.getFile();
         const fileUrl = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
-        const tmpPath = path.join(
-          os.tmpdir(),
-          `tg-voice-${Date.now()}.ogg`,
-        );
+        const tmpPath = path.join(os.tmpdir(), `tg-voice-${Date.now()}.ogg`);
 
         // Download to temp file
         await new Promise<void>((resolve, reject) => {
           const out = fs.createWriteStream(tmpPath);
-          https.get(fileUrl, (res) => {
-            res.pipe(out);
-            out.on('finish', () => { out.close(); resolve(); });
-          }).on('error', reject);
+          https
+            .get(fileUrl, (res) => {
+              res.pipe(out);
+              out.on('finish', () => {
+                out.close();
+                resolve();
+              });
+            })
+            .on('error', reject);
         });
 
         // Transcribe
         const transcript = await transcribeAudio(tmpPath);
 
         // Clean up
-        try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+        try {
+          fs.unlinkSync(tmpPath);
+        } catch {
+          /* ignore */
+        }
 
         if (transcript) {
           // Send transcription preview to the chat
-          const threadId = (ctx.message as any).message_thread_id as number | undefined;
+          const threadId = (ctx.message as any).message_thread_id as
+            | number
+            | undefined;
           const chatJid = buildTelegramJid(ctx.chat.id, threadId);
           const { chatId, threadId: tid } = parseTelegramJid(chatJid);
-          const threadOpts = tid !== undefined ? { message_thread_id: tid } : {};
+          const threadOpts =
+            tid !== undefined ? { message_thread_id: tid } : {};
           await sendTelegramMessage(
             this.bot!.api,
             chatId,
@@ -449,7 +459,10 @@ export class TelegramChannel implements Channel {
           // Voice messages are intentional interactions — always trigger the bot
           storeNonText(ctx, `@${ASSISTANT_NAME} [Voice: ${transcript}]`);
         } else {
-          storeNonText(ctx, `@${ASSISTANT_NAME} [Voice message - transcription unavailable]`);
+          storeNonText(
+            ctx,
+            `@${ASSISTANT_NAME} [Voice message - transcription unavailable]`,
+          );
         }
       } catch (err) {
         logger.error({ err }, 'Failed to process Telegram voice message');
@@ -542,7 +555,11 @@ export class TelegramChannel implements Channel {
     if (!this.bot || !isTyping) return;
     try {
       const { chatId, threadId } = parseTelegramJid(jid);
-      await this.bot.api.sendChatAction(chatId, 'typing', threadId !== undefined ? { message_thread_id: threadId } : undefined);
+      await this.bot.api.sendChatAction(
+        chatId,
+        'typing',
+        threadId !== undefined ? { message_thread_id: threadId } : undefined,
+      );
     } catch (err) {
       logger.debug({ jid, err }, 'Failed to send Telegram typing indicator');
     }

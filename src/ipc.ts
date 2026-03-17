@@ -88,7 +88,10 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     encoding: 'utf-8',
                     cwd: process.cwd(),
                   });
-                  logger.info({ output: output.slice(-500) }, 'Deploy completed');
+                  logger.info(
+                    { output: output.slice(-500) },
+                    'Deploy completed',
+                  );
                   if (data.chatJid) {
                     await deps.sendMessage(
                       data.chatJid,

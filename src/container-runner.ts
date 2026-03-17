@@ -172,7 +172,11 @@ function buildVolumeMounts(
   // Ensure container user (node, uid 1000) can write/unlink IPC files
   for (const sub of ['', 'messages', 'tasks', 'input']) {
     const dir = sub ? path.join(groupIpcDir, sub) : groupIpcDir;
-    try { fs.chmodSync(dir, 0o777); } catch { /* ignore */ }
+    try {
+      fs.chmodSync(dir, 0o777);
+    } catch {
+      /* ignore */
+    }
   }
   mounts.push({
     hostPath: groupIpcDir,

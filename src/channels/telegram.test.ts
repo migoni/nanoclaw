@@ -1036,9 +1036,7 @@ describe('TelegramChannel', () => {
 
     it('buildTelegramJid creates correct JIDs', () => {
       expect(buildTelegramJid('-1003740826206')).toBe('tg:-1003740826206');
-      expect(buildTelegramJid('-1003740826206', 8)).toBe(
-        'tg:-1003740826206:8',
-      );
+      expect(buildTelegramJid('-1003740826206', 8)).toBe('tg:-1003740826206:8');
     });
 
     it('sanitizeFolderName creates safe names', () => {
