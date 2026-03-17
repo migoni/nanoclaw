@@ -27,6 +27,7 @@ import {
   PROXY_BIND_HOST,
 } from './container-runtime.js';
 import {
+  deleteSession,
   getAllChats,
   getAllRegisteredGroups,
   getAllSessions,
@@ -145,11 +146,18 @@ export function _setRegisteredGroups(
 }
 
 /**
+ * Find a registered group by exact JID match.
+ */
+function findGroup(jid: string): RegisteredGroup | undefined {
+  return registeredGroups[jid];
+}
+
+/**
  * Process all pending messages for a group.
  * Called by the GroupQueue when it's this group's turn.
  */
 async function processGroupMessages(chatJid: string): Promise<boolean> {
-  const group = registeredGroups[chatJid];
+  const group = findGroup(chatJid);
   if (!group) return true;
 
   const channel = findChannel(channels, chatJid);
@@ -332,6 +340,19 @@ async function runAgent(
     }
 
     if (output.status === 'error') {
+      // Auto-clear stale session when "No conversation found" error occurs
+      if (
+        output.error &&
+        typeof output.error === 'string' &&
+        output.error.includes('No conversation found')
+      ) {
+        logger.warn(
+          { group: group.name },
+          'Stale session detected ("No conversation found"), clearing session for retry',
+        );
+        deleteSession(group.folder);
+        delete sessions[group.folder];
+      }
       logger.error(
         { group: group.name, error: output.error },
         'Container agent error',
@@ -383,7 +404,7 @@ async function startMessageLoop(): Promise<void> {
         }
 
         for (const [chatJid, groupMessages] of messagesByGroup) {
-          const group = registeredGroups[chatJid];
+          const group = findGroup(chatJid);
           if (!group) continue;
 
           const channel = findChannel(channels, chatJid);
@@ -500,7 +521,7 @@ async function main(): Promise<void> {
     chatJid: string,
     msg: NewMessage,
   ): Promise<void> {
-    const group = registeredGroups[chatJid];
+    const group = findGroup(chatJid);
     if (!group?.isMain) {
       logger.warn(
         { chatJid, sender: msg.sender },
@@ -549,7 +570,7 @@ async function main(): Promise<void> {
       }
 
       // Sender allowlist drop mode: discard messages from denied senders before storing
-      if (!msg.is_from_me && !msg.is_bot_message && registeredGroups[chatJid]) {
+      if (!msg.is_from_me && !msg.is_bot_message && findGroup(chatJid)) {
         const cfg = loadSenderAllowlist();
         if (
           shouldDropMessage(chatJid, cfg) &&
@@ -574,6 +595,9 @@ async function main(): Promise<void> {
       isGroup?: boolean,
     ) => storeChatMetadata(chatJid, timestamp, name, channel, isGroup),
     registeredGroups: () => registeredGroups,
+    onAutoRegister: (jid: string, group: RegisteredGroup) => {
+      registerGroup(jid, group);
+    },
   };
 
   // Create and connect all registered channels.

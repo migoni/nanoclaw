@@ -69,7 +69,14 @@ vi.mock('grammy', () => ({
   },
 }));
 
-import { TelegramChannel, TelegramChannelOpts } from './telegram.js';
+import {
+  TelegramChannel,
+  TelegramChannelOpts,
+  parseTelegramJid,
+  baseJid,
+  buildTelegramJid,
+  sanitizeFolderName,
+} from './telegram.js';
 
 // --- Test helpers ---
 
@@ -85,8 +92,10 @@ function createTestOpts(
         folder: 'test-group',
         trigger: '@Andy',
         added_at: '2024-01-01T00:00:00.000Z',
+        isMain: true,
       },
     })),
+    onAutoRegister: vi.fn(),
     ...overrides,
   };
 }
@@ -102,6 +111,8 @@ function createTextCtx(overrides: {
   messageId?: number;
   date?: number;
   entities?: any[];
+  message_thread_id?: number;
+  reply_to_message?: any;
 }) {
   const chatId = overrides.chatId ?? 100200300;
   const chatType = overrides.chatType ?? 'group';
@@ -121,6 +132,8 @@ function createTextCtx(overrides: {
       date: overrides.date ?? Math.floor(Date.now() / 1000),
       message_id: overrides.messageId ?? 1,
       entities: overrides.entities ?? [],
+      message_thread_id: overrides.message_thread_id,
+      reply_to_message: overrides.reply_to_message,
     },
     me: { username: 'andy_ai_bot' },
     reply: vi.fn(),
@@ -136,6 +149,8 @@ function createMediaCtx(overrides: {
   messageId?: number;
   caption?: string;
   extra?: Record<string, any>;
+  message_thread_id?: number;
+  reply_to_message?: any;
 }) {
   const chatId = overrides.chatId ?? 100200300;
   return {
@@ -153,6 +168,8 @@ function createMediaCtx(overrides: {
       date: overrides.date ?? Math.floor(Date.now() / 1000),
       message_id: overrides.messageId ?? 1,
       caption: overrides.caption,
+      message_thread_id: overrides.message_thread_id,
+      reply_to_message: overrides.reply_to_message,
       ...(overrides.extra || {}),
     },
     me: { username: 'andy_ai_bot' },
@@ -373,6 +390,7 @@ describe('TelegramChannel', () => {
             folder: 'private',
             trigger: '@Andy',
             added_at: '2024-01-01T00:00:00.000Z',
+            isMain: true,
           },
         })),
       });
@@ -506,7 +524,7 @@ describe('TelegramChannel', () => {
       });
       await triggerTextMessage(ctx);
 
-      // Bot is mentioned, message doesn't match trigger → prepend trigger
+      // Bot is mentioned, message doesn't match trigger -> prepend trigger
       expect(opts.onMessage).toHaveBeenCalledWith(
         'tg:100200300',
         expect.objectContaining({
@@ -596,7 +614,7 @@ describe('TelegramChannel', () => {
       );
     });
 
-    it('stores voice message with placeholder', async () => {
+    it('stores voice message with fallback when transcription fails', async () => {
       const opts = createTestOpts();
       const channel = new TelegramChannel('test-token', opts);
       await channel.connect();
@@ -604,9 +622,13 @@ describe('TelegramChannel', () => {
       const ctx = createMediaCtx({});
       await triggerMediaMessage('message:voice', ctx);
 
+      // Voice handler tries to download+transcribe; mock ctx has no getFile,
+      // so it falls back to the error placeholder
       expect(opts.onMessage).toHaveBeenCalledWith(
         'tg:100200300',
-        expect.objectContaining({ content: '[Voice message]' }),
+        expect.objectContaining({
+          content: expect.stringMatching(/\[Voice/),
+        }),
       );
     });
 
@@ -660,13 +682,13 @@ describe('TelegramChannel', () => {
       await channel.connect();
 
       const ctx = createMediaCtx({
-        extra: { sticker: { emoji: '😂' } },
+        extra: { sticker: { emoji: '\u{1F602}' } },
       });
       await triggerMediaMessage('message:sticker', ctx);
 
       expect(opts.onMessage).toHaveBeenCalledWith(
         'tg:100200300',
-        expect.objectContaining({ content: '[Sticker 😂]' }),
+        expect.objectContaining({ content: '[Sticker \u{1F602}]' }),
       );
     });
 
@@ -738,6 +760,20 @@ describe('TelegramChannel', () => {
         '-1001234567890',
         'Group message',
         { parse_mode: 'Markdown' },
+      );
+    });
+
+    it('sends message with thread ID for topic JIDs', async () => {
+      const opts = createTestOpts();
+      const channel = new TelegramChannel('test-token', opts);
+      await channel.connect();
+
+      await channel.sendMessage('tg:-1001234567890:42', 'Topic message');
+
+      expect(currentBot().api.sendMessage).toHaveBeenCalledWith(
+        '-1001234567890',
+        'Topic message',
+        { message_thread_id: 42, parse_mode: 'Markdown' },
       );
     });
 
@@ -814,6 +850,11 @@ describe('TelegramChannel', () => {
       expect(channel.ownsJid('tg:-1001234567890')).toBe(true);
     });
 
+    it('owns tg: JIDs with thread IDs (topics)', () => {
+      const channel = new TelegramChannel('test-token', createTestOpts());
+      expect(channel.ownsJid('tg:-1001234567890:42')).toBe(true);
+    });
+
     it('does not own WhatsApp group JIDs', () => {
       const channel = new TelegramChannel('test-token', createTestOpts());
       expect(channel.ownsJid('12345@g.us')).toBe(false);
@@ -843,6 +884,21 @@ describe('TelegramChannel', () => {
       expect(currentBot().api.sendChatAction).toHaveBeenCalledWith(
         '100200300',
         'typing',
+        undefined,
+      );
+    });
+
+    it('sends typing action with thread ID for topic JIDs', async () => {
+      const opts = createTestOpts();
+      const channel = new TelegramChannel('test-token', opts);
+      await channel.connect();
+
+      await channel.setTyping('tg:-1001234567890:42', true);
+
+      expect(currentBot().api.sendChatAction).toHaveBeenCalledWith(
+        '-1001234567890',
+        'typing',
+        { message_thread_id: 42 },
       );
     });
 
@@ -893,6 +949,7 @@ describe('TelegramChannel', () => {
       const ctx = {
         chat: { id: 100200300, type: 'group' as const },
         from: { first_name: 'Alice' },
+        message: {},
         reply: vi.fn(),
       };
 
@@ -913,6 +970,7 @@ describe('TelegramChannel', () => {
       const ctx = {
         chat: { id: 555, type: 'private' as const },
         from: { first_name: 'Bob' },
+        message: {},
         reply: vi.fn(),
       };
 
@@ -944,6 +1002,133 @@ describe('TelegramChannel', () => {
     it('has name "telegram"', () => {
       const channel = new TelegramChannel('test-token', createTestOpts());
       expect(channel.name).toBe('telegram');
+    });
+  });
+
+  // --- JID helpers ---
+
+  describe('JID helpers', () => {
+    it('parseTelegramJid handles simple JID', () => {
+      expect(parseTelegramJid('tg:123')).toEqual({
+        chatId: '123',
+        threadId: undefined,
+      });
+    });
+
+    it('parseTelegramJid handles negative chat ID', () => {
+      expect(parseTelegramJid('tg:-1003740826206')).toEqual({
+        chatId: '-1003740826206',
+        threadId: undefined,
+      });
+    });
+
+    it('parseTelegramJid handles topic JID', () => {
+      expect(parseTelegramJid('tg:-1003740826206:8')).toEqual({
+        chatId: '-1003740826206',
+        threadId: 8,
+      });
+    });
+
+    it('baseJid strips thread component', () => {
+      expect(baseJid('tg:-1003740826206:8')).toBe('tg:-1003740826206');
+      expect(baseJid('tg:-1003740826206')).toBe('tg:-1003740826206');
+    });
+
+    it('buildTelegramJid creates correct JIDs', () => {
+      expect(buildTelegramJid('-1003740826206')).toBe('tg:-1003740826206');
+      expect(buildTelegramJid('-1003740826206', 8)).toBe(
+        'tg:-1003740826206:8',
+      );
+    });
+
+    it('sanitizeFolderName creates safe names', () => {
+      expect(sanitizeFolderName('General Discussion')).toBe(
+        'general-discussion',
+      );
+      expect(sanitizeFolderName('  Привет мир!  ')).toBe('привет-мир');
+      expect(sanitizeFolderName('---')).toBe('topic');
+    });
+  });
+
+  // --- Forum topic support ---
+
+  describe('forum topic support', () => {
+    it('auto-registers topic when parent group is registered', async () => {
+      const opts = createTestOpts({
+        registeredGroups: vi.fn(() => ({
+          'tg:-1001234567890': {
+            name: 'Forum Group',
+            folder: 'forum-group',
+            trigger: '@Andy',
+            added_at: '2024-01-01T00:00:00.000Z',
+          },
+        })),
+      });
+      const channel = new TelegramChannel('test-token', opts);
+      await channel.connect();
+
+      const ctx = createTextCtx({
+        chatId: -1001234567890,
+        chatTitle: 'Forum Group',
+        text: '@Andy help me',
+        message_thread_id: 42,
+        reply_to_message: {
+          forum_topic_created: { name: 'Shopping' },
+        },
+        entities: [],
+      });
+      await triggerTextMessage(ctx);
+
+      expect(opts.onAutoRegister).toHaveBeenCalledWith(
+        'tg:-1001234567890:42',
+        expect.objectContaining({
+          name: 'Forum Group / Shopping',
+          folder: 'forum-group-shopping',
+          requiresTrigger: true,
+        }),
+      );
+    });
+
+    it('emits chat metadata for both base and topic JIDs', async () => {
+      const opts = createTestOpts({
+        registeredGroups: vi.fn(() => ({
+          'tg:-1001234567890': {
+            name: 'Forum Group',
+            folder: 'forum-group',
+            trigger: '@Andy',
+            added_at: '2024-01-01T00:00:00.000Z',
+          },
+        })),
+      });
+      const channel = new TelegramChannel('test-token', opts);
+      await channel.connect();
+
+      const ctx = createTextCtx({
+        chatId: -1001234567890,
+        chatTitle: 'Forum Group',
+        text: '@Andy hello',
+        message_thread_id: 42,
+        reply_to_message: {
+          forum_topic_created: { name: 'Shopping' },
+        },
+      });
+      await triggerTextMessage(ctx);
+
+      // Should emit metadata for both base group and topic
+      expect(opts.onChatMetadata).toHaveBeenCalledWith(
+        'tg:-1001234567890',
+        expect.any(String),
+        'Forum Group',
+        'telegram',
+        true,
+      );
+      expect(opts.onChatMetadata).toHaveBeenCalledWith(
+        'tg:-1001234567890:42',
+        expect.any(String),
+        'Forum Group / Shopping',
+        'telegram',
+        true,
+      );
     });
   });
 });

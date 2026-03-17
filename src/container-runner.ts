@@ -169,6 +169,11 @@ function buildVolumeMounts(
   fs.mkdirSync(path.join(groupIpcDir, 'messages'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'tasks'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'input'), { recursive: true });
+  // Ensure container user (node, uid 1000) can write/unlink IPC files
+  for (const sub of ['', 'messages', 'tasks', 'input']) {
+    const dir = sub ? path.join(groupIpcDir, sub) : groupIpcDir;
+    try { fs.chmodSync(dir, 0o777); } catch { /* ignore */ }
+  }
   mounts.push({
     hostPath: groupIpcDir,
     containerPath: '/workspace/ipc',

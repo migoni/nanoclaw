@@ -1,3 +1,4 @@
+import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -73,7 +74,37 @@ export function startIpcWatcher(deps: IpcDeps): void {
             const filePath = path.join(messagesDir, file);
             try {
               const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-              if (data.type === 'message' && data.chatJid && data.text) {
+              if (data.type === 'deploy' && isMain) {
+                // Deploy from dev-tomas branch — main group only
+                logger.info({ sourceGroup }, 'Deploy requested via IPC');
+                try {
+                  const scriptPath = path.join(
+                    process.cwd(),
+                    'scripts',
+                    'deploy-from-dev.sh',
+                  );
+                  const output = execSync(`bash "${scriptPath}"`, {
+                    timeout: 120000,
+                    encoding: 'utf-8',
+                    cwd: process.cwd(),
+                  });
+                  logger.info({ output: output.slice(-500) }, 'Deploy completed');
+                  if (data.chatJid) {
+                    await deps.sendMessage(
+                      data.chatJid,
+                      'Deploy complete. Service is restarting.',
+                    );
+                  }
+                } catch (err: any) {
+                  logger.error({ err: err.message }, 'Deploy failed');
+                  if (data.chatJid) {
+                    await deps.sendMessage(
+                      data.chatJid,
+                      `Deploy failed: ${err.message?.slice(0, 200)}`,
+                    );
+                  }
+                }
+              } else if (data.type === 'message' && data.chatJid && data.text) {
                 // Authorization: verify this group can send to this chatJid
                 const targetGroup = registeredGroups[data.chatJid];
                 if (
