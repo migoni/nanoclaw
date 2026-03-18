@@ -346,6 +346,18 @@ export async function runContainerAgent(
 
   const groupDir = resolveGroupFolderPath(group.folder);
   fs.mkdirSync(groupDir, { recursive: true });
+  // Ensure container's node user (uid 1000) can write to the group folder
+  // (e.g. CLAUDE.md, logs). Mirrors the same chown applied to the sessions dir.
+  try {
+    const nodeUid = 1000;
+    fs.chownSync(groupDir, nodeUid, nodeUid);
+    // Also chown existing files inside the group dir (e.g. CLAUDE.md created as root)
+    for (const entry of fs.readdirSync(groupDir)) {
+      fs.chownSync(path.join(groupDir, entry), nodeUid, nodeUid);
+    }
+  } catch {
+    /* ignore — non-root hosts don't need this */
+  }
 
   const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
