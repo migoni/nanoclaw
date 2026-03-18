@@ -6,6 +6,7 @@ import {
   ASSISTANT_NAME,
   CREDENTIAL_PROXY_PORT,
   IDLE_TIMEOUT,
+  MAX_CONTEXT_MESSAGES,
   POLL_INTERVAL,
   TIMEZONE,
   TRIGGER_PATTERN,
@@ -174,6 +175,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     chatJid,
     sinceTimestamp,
     ASSISTANT_NAME,
+    MAX_CONTEXT_MESSAGES,
   );
 
   if (missedMessages.length === 0) return true;
@@ -454,6 +456,7 @@ async function startMessageLoop(): Promise<void> {
             chatJid,
             lastAgentTimestamp[chatJid] || '',
             ASSISTANT_NAME,
+            MAX_CONTEXT_MESSAGES,
           );
           const messagesToSend =
             allPending.length > 0 ? allPending : groupMessages;
@@ -493,7 +496,7 @@ async function startMessageLoop(): Promise<void> {
 function recoverPendingMessages(): void {
   for (const [chatJid, group] of Object.entries(registeredGroups)) {
     const sinceTimestamp = lastAgentTimestamp[chatJid] || '';
-    const pending = getMessagesSince(chatJid, sinceTimestamp, ASSISTANT_NAME);
+    const pending = getMessagesSince(chatJid, sinceTimestamp, ASSISTANT_NAME, MAX_CONTEXT_MESSAGES);
     if (pending.length > 0) {
       logger.info(
         { group: group.name, pendingCount: pending.length },

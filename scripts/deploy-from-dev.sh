@@ -3,6 +3,10 @@
 # Called via IPC deploy command after a PR is merged.
 set -e
 
+# Load nvm so npm/node are available (IPC execSync doesn't inherit login shell)
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
 REPO="/root/nanoclaw"
 WORKTREE="/root/nanoclaw-dev"
 
