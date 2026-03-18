@@ -219,9 +219,17 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   await channel.setTyping?.(chatJid, true);
   // Telegram's typing indicator expires after ~5s.
   // Re-send every 4s so the user sees continuous "typing..." while the agent works.
-  const typingInterval = setInterval(() => {
+  // Stop when the agent sends a response; restart when new work arrives.
+  let typingInterval: ReturnType<typeof setInterval> | null = setInterval(() => {
     channel.setTyping?.(chatJid, true)?.catch(() => {});
   }, 4000);
+  const stopTyping = () => {
+    if (typingInterval) {
+      clearInterval(typingInterval);
+      typingInterval = null;
+      channel.setTyping?.(chatJid, false)?.catch(() => {});
+    }
+  };
   let hadError = false;
   let outputSentToUser = false;
 
@@ -238,6 +246,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       if (text) {
         await channel.sendMessage(chatJid, text);
         outputSentToUser = true;
+        stopTyping();
       }
       // Only reset idle timer on actual results, not session-update markers (result: null)
       resetIdleTimer();
@@ -252,8 +261,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }
   });
 
-  clearInterval(typingInterval);
-  await channel.setTyping?.(chatJid, false);
+  stopTyping();
   if (idleTimer) clearTimeout(idleTimer);
 
   if (output === 'error' || hadError) {
