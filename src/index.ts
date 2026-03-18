@@ -351,18 +351,13 @@ async function runAgent(
       wrappedOnOutput,
     );
 
-    if (output.newSessionId) {
-      sessions[group.folder] = output.newSessionId;
-      setSession(group.folder, output.newSessionId);
-    }
-
     if (output.status === 'error') {
-      // Auto-clear stale session when "No conversation found" error occurs
-      if (
+      const isStaleSession =
         output.error &&
         typeof output.error === 'string' &&
-        output.error.includes('No conversation found')
-      ) {
+        output.error.includes('No conversation found');
+      if (isStaleSession) {
+        // Don't save the stale session — clear it so next retry starts fresh
         logger.warn(
           { group: group.name },
           'Stale session detected ("No conversation found"), clearing session for retry',
@@ -375,6 +370,11 @@ async function runAgent(
         'Container agent error',
       );
       return 'error';
+    }
+
+    if (output.newSessionId) {
+      sessions[group.folder] = output.newSessionId;
+      setSession(group.folder, output.newSessionId);
     }
 
     return 'success';

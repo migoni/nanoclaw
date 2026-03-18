@@ -1,3 +1,3 @@
 # Plugins installed for all topics (one per line)
 # Format: name or name@marketplace (omit marketplace for official)
-superpowers
+# superpowers — disabled: fails to install inside container
