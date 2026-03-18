@@ -189,12 +189,19 @@ function buildVolumeMounts(
     ...readLines(path.join(globalGroupDir, 'skills')),
     ...readLines(path.join(thisGroupDir, 'skills')),
   ];
-  // Copy extra skill directories (if they exist in container/skills/)
+  // Copy extra skill directories (search in container/skills/ and container/skills-dev/)
+  const skillSearchDirs = [
+    skillsSrc,
+    path.join(process.cwd(), 'container', 'skills-dev'),
+  ];
   for (const skill of extraSkills) {
-    const srcDir = path.join(skillsSrc, skill);
-    if (fs.existsSync(srcDir) && fs.statSync(srcDir).isDirectory()) {
-      const dstDir = path.join(skillsDst, skill);
-      fs.cpSync(srcDir, dstDir, { recursive: true });
+    for (const searchDir of skillSearchDirs) {
+      const srcDir = path.join(searchDir, skill);
+      if (fs.existsSync(srcDir) && fs.statSync(srcDir).isDirectory()) {
+        const dstDir = path.join(skillsDst, skill);
+        fs.cpSync(srcDir, dstDir, { recursive: true });
+        break;
+      }
     }
   }
 
