@@ -9,16 +9,14 @@ store/
 data/
 logs/
 
-# Groups - only track base structure and specific CLAUDE.md files
-groups/*
-!groups/main/
-!groups/global/
-groups/main/*
-groups/global/*
-!groups/main/CLAUDE.md
-!groups/global/CLAUDE.md
-!groups/global/skills
-!groups/global/plugins
+# Groups - track CLAUDE.md, skills, and plugins for ALL group subfolders
+# Runtime-only files (logs/, conversations/, etc.) remain ignored
+groups/*/*
+!groups/*/CLAUDE.md
+!groups/*/skills
+!groups/*/skills/**
+!groups/*/plugins
+!groups/*/plugins/**
 
 # Secrets
 *.keys.json
