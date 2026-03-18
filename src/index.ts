@@ -686,12 +686,20 @@ async function main(): Promise<void> {
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
 
-  // Send startup notification to ALL main groups (non-blocking — don't delay message loop start)
+  // Send startup notification to owner DM only (non-blocking — don't delay message loop start)
+  // A Telegram DM has a positive numeric ID (e.g. tg:942175938).
+  // Groups/supergroups have negative IDs (tg:-100...) and may have a thread suffix (tg:-100...:8).
   setTimeout(async () => {
     const mainEntries = Object.entries(registeredGroups).filter(
       ([_, g]) => g.isMain === true,
     );
-    if (mainEntries.length === 0) return;
+    // Pick the first DM: JID after the channel prefix is a positive integer (no minus, no colon)
+    const dmEntry = mainEntries.find(([jid]) => {
+      const idPart = jid.replace(/^[^:]+:/, ''); // strip "tg:" prefix
+      return /^\d+$/.test(idPart);               // positive integer only
+    });
+    if (!dmEntry) return;
+    const [dmJid] = dmEntry;
     let message: string;
     try {
       const hash = execSync('git rev-parse --short HEAD', {
@@ -705,14 +713,12 @@ async function main(): Promise<void> {
       logger.warn({ err }, 'Failed to get git info for startup notification');
       return;
     }
-    for (const [mainJid] of mainEntries) {
-      const mainChannel = findChannel(channels, mainJid);
-      if (!mainChannel) continue;
-      try {
-        await mainChannel.sendMessage(mainJid, message);
-      } catch (err) {
-        logger.warn({ err, jid: mainJid }, 'Failed to send startup notification to main group');
-      }
+    const dmChannel = findChannel(channels, dmJid);
+    if (!dmChannel) return;
+    try {
+      await dmChannel.sendMessage(dmJid, message);
+    } catch (err) {
+      logger.warn({ err, jid: dmJid }, 'Failed to send startup notification to owner DM');
     }
   }, 3000); // Delay to ensure bot polling is fully established
 
