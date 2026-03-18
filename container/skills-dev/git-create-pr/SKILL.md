@@ -9,12 +9,14 @@ After making code changes, build, test, commit, push, and create a PR.
 
 ## Steps
 
-### 1. Build and test
+### 1. Format, build and test
 ```bash
 cd /workspace/extra/nanoclaw
+npx prettier --write .
 npm run build
 npx vitest run
 ```
+Run Prettier **before** building — GitHub Actions checks formatting and will fail the PR if code is not formatted.
 If build or tests fail, fix the issues before continuing.
 
 ### 2. Commit
@@ -65,3 +67,4 @@ Send the user:
 - PR title should reference the issue number
 - Body must include `Closes #<NUMBER>` to link the issue
 - Always confirm build and tests pass before creating PR
+- Always run Prettier before committing — CI enforces formatting
