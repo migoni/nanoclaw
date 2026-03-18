@@ -686,30 +686,30 @@ async function main(): Promise<void> {
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
 
-  // Send startup notification with current commit info to the main group
-  const mainEntry = Object.entries(registeredGroups).find(
-    ([_, g]) => g.isMain === true,
-  );
-  if (mainEntry) {
-    const [mainJid] = mainEntry;
-    const mainChannel = findChannel(channels, mainJid);
-    if (mainChannel) {
-      try {
-        const hash = execSync('git rev-parse --short HEAD', {
-          encoding: 'utf-8',
-        }).trim();
-        const subject = execSync('git log -1 --format=%s', {
-          encoding: 'utf-8',
-        }).trim();
-        await mainChannel.sendMessage(
-          mainJid,
-          `🚀 NanoClaw started\nCommit: ${hash} — ${subject}`,
-        );
-      } catch (err) {
-        logger.warn({ err }, 'Failed to send startup notification');
-      }
+  // Send startup notification (non-blocking — don't delay message loop start)
+  setTimeout(async () => {
+    try {
+      const mainEntry = Object.entries(registeredGroups).find(
+        ([_, g]) => g.isMain === true,
+      );
+      if (!mainEntry) return;
+      const [mainJid] = mainEntry;
+      const mainChannel = findChannel(channels, mainJid);
+      if (!mainChannel) return;
+      const hash = execSync('git rev-parse --short HEAD', {
+        encoding: 'utf-8',
+      }).trim();
+      const subject = execSync('git log -1 --format=%s', {
+        encoding: 'utf-8',
+      }).trim();
+      await mainChannel.sendMessage(
+        mainJid,
+        `🚀 NanoClaw started\nCommit: ${hash} — ${subject}`,
+      );
+    } catch (err) {
+      logger.warn({ err }, 'Failed to send startup notification');
     }
-  }
+  }, 3000); // Delay to ensure bot polling is fully established
 
   startMessageLoop().catch((err) => {
     logger.fatal({ err }, 'Message loop crashed unexpectedly');

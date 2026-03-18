@@ -36,7 +36,9 @@ git checkout main 2>/dev/null || git checkout -b main origin/main
 git merge origin/main --ff-only
 cd "$REPO"
 
-echo "=== Restarting service ==="
-systemctl restart nanoclaw
+echo "=== Restarting service (detached) ==="
+# Use nohup + background so the restart doesn't kill this script
+# (this script runs inside the service process via execSync)
+nohup bash -c "sleep 2 && systemctl restart nanoclaw" &>/dev/null &
 
-echo "=== Deploy complete ==="
+echo "=== Deploy complete (service will restart in 2s) ==="
