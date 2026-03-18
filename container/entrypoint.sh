@@ -6,6 +6,19 @@ cd /app && npx tsc --outDir /tmp/dist 2>&1 >&2
 ln -s /app/node_modules /tmp/dist/node_modules
 chmod -R a-w /tmp/dist
 
+# Symlink git credentials if mounted via additionalMounts
+if [ -f /workspace/extra/gitconfig ]; then
+  ln -sf /workspace/extra/gitconfig /home/node/.gitconfig
+fi
+if [ -f /workspace/extra/gitcredentials ]; then
+  ln -sf /workspace/extra/gitcredentials /home/node/.git-credentials
+  # Also authenticate gh CLI using the PAT from git-credentials
+  TOKEN=$(grep 'github.com' /workspace/extra/gitcredentials 2>/dev/null | sed 's|.*://[^:]*:\([^@]*\)@.*|\1|' | head -1)
+  if [ -n "$TOKEN" ]; then
+    echo "$TOKEN" | gh auth login --with-token 2>&1 >&2 || true
+  fi
+fi
+
 # Install plugins if plugins.txt exists in .claude directory
 PLUGINS_FILE="/home/node/.claude/plugins.txt"
 if [ -f "$PLUGINS_FILE" ]; then
