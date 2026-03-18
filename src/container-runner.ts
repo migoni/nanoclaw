@@ -122,6 +122,13 @@ function buildVolumeMounts(
     '.claude',
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
+  // Ensure container's node user (uid 1000) can write here when host runs as root.
+  // chown to 1000:1000 is tighter than chmod 777 — only the container user gets access.
+  try {
+    const nodeUid = 1000;
+    fs.chownSync(groupSessionsDir, nodeUid, nodeUid);
+    fs.chownSync(path.dirname(groupSessionsDir), nodeUid, nodeUid);
+  } catch { /* ignore — non-root hosts don't need this */ }
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
   if (!fs.existsSync(settingsFile)) {
     fs.writeFileSync(
