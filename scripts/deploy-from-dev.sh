@@ -25,6 +25,7 @@ else
 fi
 
 echo "=== Syncing worktree ==="
+git config --global --add safe.directory "$WORKTREE" 2>/dev/null || true
 cd "$WORKTREE"
 git fetch origin
 git checkout main 2>/dev/null || git checkout -b main origin/main
