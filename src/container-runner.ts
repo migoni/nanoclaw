@@ -128,7 +128,9 @@ function buildVolumeMounts(
     const nodeUid = 1000;
     fs.chownSync(groupSessionsDir, nodeUid, nodeUid);
     fs.chownSync(path.dirname(groupSessionsDir), nodeUid, nodeUid);
-  } catch { /* ignore — non-root hosts don't need this */ }
+  } catch {
+    /* ignore — non-root hosts don't need this */
+  }
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
   if (!fs.existsSync(settingsFile)) {
     fs.writeFileSync(
