@@ -1,3 +1,4 @@
+import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -676,6 +677,32 @@ async function main(): Promise<void> {
   });
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
+
+  // Send startup notification with current commit info to the main group
+  const mainEntry = Object.entries(registeredGroups).find(
+    ([_, g]) => g.isMain === true,
+  );
+  if (mainEntry) {
+    const [mainJid] = mainEntry;
+    const mainChannel = findChannel(channels, mainJid);
+    if (mainChannel) {
+      try {
+        const hash = execSync('git rev-parse --short HEAD', {
+          encoding: 'utf-8',
+        }).trim();
+        const subject = execSync('git log -1 --format=%s', {
+          encoding: 'utf-8',
+        }).trim();
+        await mainChannel.sendMessage(
+          mainJid,
+          `🚀 NanoClaw started\nCommit: ${hash} — ${subject}`,
+        );
+      } catch (err) {
+        logger.warn({ err }, 'Failed to send startup notification');
+      }
+    }
+  }
+
   startMessageLoop().catch((err) => {
     logger.fatal({ err }, 'Message loop crashed unexpectedly');
     process.exit(1);
