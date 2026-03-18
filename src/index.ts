@@ -496,7 +496,12 @@ async function startMessageLoop(): Promise<void> {
 function recoverPendingMessages(): void {
   for (const [chatJid, group] of Object.entries(registeredGroups)) {
     const sinceTimestamp = lastAgentTimestamp[chatJid] || '';
-    const pending = getMessagesSince(chatJid, sinceTimestamp, ASSISTANT_NAME, MAX_CONTEXT_MESSAGES);
+    const pending = getMessagesSince(
+      chatJid,
+      sinceTimestamp,
+      ASSISTANT_NAME,
+      MAX_CONTEXT_MESSAGES,
+    );
     if (pending.length > 0) {
       logger.info(
         { group: group.name, pendingCount: pending.length },
