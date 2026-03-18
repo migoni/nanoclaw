@@ -220,9 +220,12 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   // Telegram's typing indicator expires after ~5s.
   // Re-send every 4s so the user sees continuous "typing..." while the agent works.
   // Stop when the agent sends a response; restart when new work arrives.
-  let typingInterval: ReturnType<typeof setInterval> | null = setInterval(() => {
-    channel.setTyping?.(chatJid, true)?.catch(() => {});
-  }, 4000);
+  let typingInterval: ReturnType<typeof setInterval> | null = setInterval(
+    () => {
+      channel.setTyping?.(chatJid, true)?.catch(() => {});
+    },
+    4000,
+  );
   const stopTyping = () => {
     if (typingInterval) {
       clearInterval(typingInterval);
