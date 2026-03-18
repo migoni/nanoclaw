@@ -14,9 +14,7 @@ logs/
 groups/*/*
 !groups/*/CLAUDE.md
 !groups/*/skills
-!groups/*/skills/**
 !groups/*/plugins
-!groups/*/plugins/**
 
 # Secrets
 *.keys.json
