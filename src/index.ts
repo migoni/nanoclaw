@@ -686,28 +686,33 @@ async function main(): Promise<void> {
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
 
-  // Send startup notification (non-blocking — don't delay message loop start)
+  // Send startup notification to ALL main groups (non-blocking — don't delay message loop start)
   setTimeout(async () => {
+    const mainEntries = Object.entries(registeredGroups).filter(
+      ([_, g]) => g.isMain === true,
+    );
+    if (mainEntries.length === 0) return;
+    let message: string;
     try {
-      const mainEntry = Object.entries(registeredGroups).find(
-        ([_, g]) => g.isMain === true,
-      );
-      if (!mainEntry) return;
-      const [mainJid] = mainEntry;
-      const mainChannel = findChannel(channels, mainJid);
-      if (!mainChannel) return;
       const hash = execSync('git rev-parse --short HEAD', {
         encoding: 'utf-8',
       }).trim();
       const subject = execSync('git log -1 --format=%s', {
         encoding: 'utf-8',
       }).trim();
-      await mainChannel.sendMessage(
-        mainJid,
-        `🚀 NanoClaw started\nCommit: ${hash} — ${subject}`,
-      );
+      message = `🚀 NanoClaw started\nCommit: ${hash} — ${subject}`;
     } catch (err) {
-      logger.warn({ err }, 'Failed to send startup notification');
+      logger.warn({ err }, 'Failed to get git info for startup notification');
+      return;
+    }
+    for (const [mainJid] of mainEntries) {
+      const mainChannel = findChannel(channels, mainJid);
+      if (!mainChannel) continue;
+      try {
+        await mainChannel.sendMessage(mainJid, message);
+      } catch (err) {
+        logger.warn({ err, jid: mainJid }, 'Failed to send startup notification to main group');
+      }
     }
   }, 3000); // Delay to ensure bot polling is fully established
 
