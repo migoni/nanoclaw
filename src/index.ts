@@ -76,6 +76,28 @@ let messageLoopRunning = false;
 const channels: Channel[] = [];
 const queue = new GroupQueue();
 
+// Per-JID typing indicator intervals. Shared between processGroupMessages and
+// the piping path in startMessageLoop so the indicator stays alive across turns
+// (e.g. when a new message arrives while a container is still active).
+const typingIntervals = new Map<string, ReturnType<typeof setInterval>>();
+
+function startTypingForJid(jid: string, channel: Channel): void {
+  if (typingIntervals.has(jid)) return; // interval already running
+  channel.setTyping?.(jid, true)?.catch(() => {});
+  const iv = setInterval(() => {
+    channel.setTyping?.(jid, true)?.catch(() => {});
+  }, 4000);
+  typingIntervals.set(jid, iv);
+}
+
+function stopTypingForJid(jid: string): void {
+  const iv = typingIntervals.get(jid);
+  if (iv) {
+    clearInterval(iv);
+    typingIntervals.delete(jid);
+  }
+}
+
 function loadState(): void {
   lastTimestamp = getRouterState('last_timestamp') || '';
   const agentTs = getRouterState('last_agent_timestamp');
@@ -219,23 +241,11 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     }, IDLE_TIMEOUT);
   };
 
-  await channel.setTyping?.(chatJid, true);
-  // Telegram's typing indicator expires after ~5s.
-  // Re-send every 4s so the user sees continuous "typing..." while the agent works.
-  // Stop when the agent sends a response; restart when new work arrives.
-  let typingInterval: ReturnType<typeof setInterval> | null = setInterval(
-    () => {
-      channel.setTyping?.(chatJid, true)?.catch(() => {});
-    },
-    4000,
-  );
-  const stopTyping = () => {
-    if (typingInterval) {
-      clearInterval(typingInterval);
-      typingInterval = null;
-      channel.setTyping?.(chatJid, false)?.catch(() => {});
-    }
-  };
+  // Start (or continue) the shared typing interval for this JID.
+  // Uses a module-level map so the piping path in startMessageLoop can also
+  // restart it without creating a duplicate interval.
+  startTypingForJid(chatJid, channel);
+  const stopTyping = () => stopTypingForJid(chatJid);
   let hadError = false;
   let outputSentToUser = false;
 
@@ -252,7 +262,8 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       if (text) {
         await channel.sendMessage(chatJid, text);
         outputSentToUser = true;
-        stopTyping();
+        // Don't stop typing here — wait for status === 'success' so the indicator
+        // stays alive if the agent sends multiple messages or more work is piped.
       }
       // Only reset idle timer on actual results, not session-update markers (result: null)
       resetIdleTimer();
@@ -260,6 +271,7 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
     if (result.status === 'success') {
       queue.notifyIdle(chatJid);
+      stopTyping(); // Agent turn complete — indicator stops until next message arrives
     }
 
     if (result.status === 'error') {
@@ -470,12 +482,10 @@ async function startMessageLoop(): Promise<void> {
             lastAgentTimestamp[chatJid] =
               messagesToSend[messagesToSend.length - 1].timestamp;
             saveState();
-            // Show typing indicator while the container processes the piped message
-            channel
-              .setTyping?.(chatJid, true)
-              ?.catch((err) =>
-                logger.warn({ chatJid, err }, 'Failed to set typing indicator'),
-              );
+            // (Re)start the shared typing interval. If a previous turn already
+            // stopped it via stopTypingForJid, this creates a fresh one so the
+            // indicator stays alive for the full duration of the piped response.
+            startTypingForJid(chatJid, channel);
           } else {
             // No active container — enqueue for a new one
             queue.enqueueMessageCheck(chatJid);
