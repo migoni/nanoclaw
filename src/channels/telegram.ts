@@ -5,6 +5,7 @@ import path from 'path';
 import { Api, Bot } from 'grammy';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
+import { resolveGroupFolderPath } from '../group-folder.js';
 import { transcribeAudio } from '../transcription.js';
 import { readEnvFile } from '../env.js';
 import { logger } from '../logger.js';
@@ -408,7 +409,52 @@ export class TelegramChannel implements Channel {
       });
     };
 
-    this.bot.on('message:photo', (ctx) => storeNonText(ctx, '[Photo]'));
+    // Helper: download a Telegram file to a destination path
+    const downloadFile = async (fileId: string, destPath: string): Promise<void> => {
+      const file = await this.bot!.api.getFile(fileId);
+      const fileUrl = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
+      await new Promise<void>((resolve, reject) => {
+        const out = fs.createWriteStream(destPath);
+        https.get(fileUrl, (res) => {
+          res.pipe(out);
+          out.on('finish', () => { out.close(); resolve(); });
+        }).on('error', reject);
+      });
+    };
+
+    // Helper: resolve the media dir for a group JID, returns null if group not found
+    const getMediaDir = (chatJid: string): string | null => {
+      const groups = this.opts.registeredGroups();
+      const group = groups[chatJid];
+      if (!group) return null;
+      const mediaDir = path.join(resolveGroupFolderPath(group.folder), 'media');
+      fs.mkdirSync(mediaDir, { recursive: true });
+      return mediaDir;
+    };
+
+    this.bot.on('message:photo', async (ctx) => {
+      const threadId = (ctx.message as any).message_thread_id as number | undefined;
+      const chatJid = buildTelegramJid(ctx.chat.id, threadId);
+      const mediaDir = getMediaDir(chatJid);
+      if (!mediaDir) {
+        storeNonText(ctx, '[Photo]');
+        return;
+      }
+      try {
+        // Pick the largest available photo size
+        const photos = ctx.message.photo;
+        const photo = photos[photos.length - 1];
+        const ext = 'jpg';
+        const filename = `photo-${Date.now()}.${ext}`;
+        const destPath = path.join(mediaDir, filename);
+        await downloadFile(photo.file_id, destPath);
+        const containerPath = `/workspace/group/media/${filename}`;
+        storeNonText(ctx, `[Photo: ${containerPath}]`);
+      } catch (err) {
+        logger.warn({ err }, 'Failed to download Telegram photo, using placeholder');
+        storeNonText(ctx, '[Photo]');
+      }
+    });
     this.bot.on('message:video', (ctx) => storeNonText(ctx, '[Video]'));
     this.bot.on('message:voice', async (ctx) => {
       try {
@@ -471,9 +517,27 @@ export class TelegramChannel implements Channel {
       }
     });
     this.bot.on('message:audio', (ctx) => storeNonText(ctx, '[Audio]'));
-    this.bot.on('message:document', (ctx) => {
-      const name = ctx.message.document?.file_name || 'file';
-      storeNonText(ctx, `[Document: ${name}]`);
+    this.bot.on('message:document', async (ctx) => {
+      const threadId = (ctx.message as any).message_thread_id as number | undefined;
+      const chatJid = buildTelegramJid(ctx.chat.id, threadId);
+      const originalName = ctx.message.document?.file_name || 'file';
+      const mediaDir = getMediaDir(chatJid);
+      if (!mediaDir) {
+        storeNonText(ctx, `[Document: ${originalName}]`);
+        return;
+      }
+      try {
+        const fileId = ctx.message.document!.file_id;
+        // Prefix with timestamp to avoid collisions
+        const filename = `${Date.now()}-${originalName}`;
+        const destPath = path.join(mediaDir, filename);
+        await downloadFile(fileId, destPath);
+        const containerPath = `/workspace/group/media/${filename}`;
+        storeNonText(ctx, `[Document: ${originalName} — ${containerPath}]`);
+      } catch (err) {
+        logger.warn({ err, name: originalName }, 'Failed to download Telegram document, using placeholder');
+        storeNonText(ctx, `[Document: ${originalName}]`);
+      }
     });
     this.bot.on('message:sticker', (ctx) => {
       const emoji = ctx.message.sticker?.emoji || '';
