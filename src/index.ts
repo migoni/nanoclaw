@@ -61,6 +61,7 @@ import {
   shouldDropMessage,
 } from './sender-allowlist.js';
 import { startSchedulerLoop } from './task-scheduler.js';
+import { startMediaCleanup } from './media-cleanup.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
 
@@ -693,6 +694,9 @@ async function main(): Promise<void> {
     writeGroupsSnapshot: (gf, im, ag, rj) =>
       writeGroupsSnapshot(gf, im, ag, rj),
   });
+  // Clean up old media files (photos/documents) on startup and every 24 hours
+  startMediaCleanup();
+
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
 
