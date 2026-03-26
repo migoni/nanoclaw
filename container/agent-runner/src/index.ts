@@ -19,6 +19,18 @@ import path from 'path';
 import { query, HookCallback, PreCompactHookInput } from '@anthropic-ai/claude-agent-sdk';
 import { fileURLToPath } from 'url';
 
+interface McpServerConfig {
+  name: string;
+  type: 'remote' | 'local';
+  // Remote
+  url?: string;
+  headers?: Record<string, string>;
+  // Local
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
 interface ContainerInput {
   prompt: string;
   sessionId?: string;
@@ -27,6 +39,7 @@ interface ContainerInput {
   isMain: boolean;
   isScheduledTask?: boolean;
   assistantName?: string;
+  additionalMcpServers?: McpServerConfig[];
 }
 
 interface ContainerOutput {
@@ -407,7 +420,9 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*'
+        'mcp__nanoclaw__*',
+        // Allow tools from any additional per-group MCP servers
+        ...(containerInput.additionalMcpServers ?? []).map(s => `mcp__${s.name}__*`),
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -423,6 +438,15 @@ async function runQuery(
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
           },
         },
+        // Per-group MCP servers (e.g. Jira, Toggl) — loaded from mcp.json + .secrets
+        ...Object.fromEntries(
+          (containerInput.additionalMcpServers ?? []).map(s => {
+            if (s.type === 'remote') {
+              return [s.name, { type: 'sse', url: s.url, headers: s.headers }];
+            }
+            return [s.name, { command: s.command, args: s.args, env: s.env }];
+          })
+        ),
       },
       hooks: {
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
