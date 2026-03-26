@@ -52,6 +52,16 @@ COPY agent-runner/ ./
 # Build TypeScript
 RUN npm run build
 
+# Build Toggl MCP server
+WORKDIR /app/mcp-servers/toggl
+COPY mcp-servers/toggl/package*.json ./
+RUN npm install
+COPY mcp-servers/toggl/ ./
+RUN npm run build
+
+# Return to app directory
+WORKDIR /app
+
 # Create workspace directories
 RUN mkdir -p /workspace/group /workspace/global /workspace/extra /workspace/ipc/messages /workspace/ipc/tasks /workspace/ipc/input
 

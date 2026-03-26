@@ -33,6 +33,20 @@ import { RegisteredGroup } from './types.js';
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
 
+/** MCP server config passed from host to container via ContainerInput. */
+export interface McpServerConfig {
+  name: string;
+  /** 'remote' = HTTP/SSE endpoint (e.g. Atlassian Cloud); 'local' = subprocess */
+  type: 'remote' | 'local';
+  // Remote servers
+  url?: string;
+  headers?: Record<string, string>;
+  // Local servers
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
 export interface ContainerInput {
   prompt: string;
   sessionId?: string;
@@ -41,6 +55,8 @@ export interface ContainerInput {
   isMain: boolean;
   isScheduledTask?: boolean;
   assistantName?: string;
+  /** Per-group MCP servers loaded from groups/{folder}/mcp.json + .secrets */
+  additionalMcpServers?: McpServerConfig[];
 }
 
 export interface ContainerOutput {
@@ -336,6 +352,106 @@ function buildContainerArgs(
   return args;
 }
 
+/**
+ * Parse a .secrets file (KEY=VALUE lines) into a plain object.
+ * Lines starting with # are comments; blank lines are ignored.
+ * Values may optionally be quoted with single or double quotes.
+ */
+function parseSecretsFile(filePath: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return result; // file does not exist or is unreadable
+  }
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx < 1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    let value = trimmed.slice(eqIdx + 1).trim();
+    // Strip surrounding quotes if present
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+/**
+ * Load per-group MCP server configurations from:
+ *   groups/{folder}/mcp.json   → lists which servers to enable
+ *   groups/{folder}/.secrets   → KEY=VALUE credentials for each server
+ *
+ * Only groups that explicitly opt-in via mcp.json get any MCP tools.
+ */
+function loadGroupMcpServers(groupFolder: string): McpServerConfig[] {
+  const groupDir = resolveGroupFolderPath(groupFolder);
+  const mcpConfigPath = path.join(groupDir, 'mcp.json');
+  const secretsPath = path.join(groupDir, '.secrets');
+
+  let mcpConfig: { servers?: string[] };
+  try {
+    mcpConfig = JSON.parse(fs.readFileSync(mcpConfigPath, 'utf-8'));
+  } catch {
+    return []; // no mcp.json → no additional MCP tools
+  }
+
+  const servers: string[] = Array.isArray(mcpConfig.servers) ? mcpConfig.servers : [];
+  if (servers.length === 0) return [];
+
+  const secrets = parseSecretsFile(secretsPath);
+  const configs: McpServerConfig[] = [];
+
+  for (const serverName of servers) {
+    switch (serverName) {
+      case 'jira': {
+        // Official Atlassian Cloud MCP server (remote, no local process)
+        const email = secrets.JIRA_EMAIL ?? '';
+        const token = secrets.JIRA_API_TOKEN ?? '';
+        if (!email || !token) {
+          logger.warn({ groupFolder }, 'mcp/jira: missing JIRA_EMAIL or JIRA_API_TOKEN in .secrets');
+          break;
+        }
+        const encoded = Buffer.from(`${email}:${token}`).toString('base64');
+        configs.push({
+          name: 'atlassian',
+          type: 'remote',
+          url: 'https://mcp.atlassian.com/v1/mcp',
+          headers: { Authorization: `Basic ${encoded}` },
+        });
+        break;
+      }
+
+      case 'toggl': {
+        // Custom Toggl MCP server — built into the container image
+        const togglToken = secrets.TOGGL_API_TOKEN ?? '';
+        if (!togglToken) {
+          logger.warn({ groupFolder }, 'mcp/toggl: missing TOGGL_API_TOKEN in .secrets');
+          break;
+        }
+        configs.push({
+          name: 'toggl',
+          type: 'local',
+          command: 'node',
+          args: ['/app/mcp-servers/toggl/dist/index.js'],
+          env: { TOGGL_API_TOKEN: togglToken },
+        });
+        break;
+      }
+
+      default:
+        logger.warn({ groupFolder, serverName }, 'mcp: unknown server in mcp.json, skipping');
+    }
+  }
+
+  return configs;
+}
+
 export async function runContainerAgent(
   group: RegisteredGroup,
   input: ContainerInput,
@@ -357,6 +473,11 @@ export async function runContainerAgent(
     }
   } catch {
     /* ignore — non-root hosts don't need this */
+  }
+
+  // Attach per-group MCP server configs (read from mcp.json + .secrets on host)
+  if (!input.additionalMcpServers) {
+    input.additionalMcpServers = loadGroupMcpServers(group.folder);
   }
 
   const mounts = buildVolumeMounts(group, input.isMain);
