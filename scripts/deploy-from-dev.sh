@@ -39,6 +39,6 @@ cd "$REPO"
 echo "=== Restarting service (detached) ==="
 # Use nohup + background so the restart doesn't kill this script
 # (this script runs inside the service process via execSync)
-nohup bash -c "sleep 2 && systemctl restart nanoclaw" &>/dev/null &
+nohup bash -c "sleep 10 && systemctl restart nanoclaw" &>/dev/null &
 
-echo "=== Deploy complete (service will restart in 2s) ==="
+echo "=== Deploy complete (service will restart in 10s) ==="
